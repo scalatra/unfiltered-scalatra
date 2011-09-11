@@ -2,10 +2,9 @@ package com.example
 
 import unfiltered.request._
 import unfiltered.response._
-import org.clapper.avsl.Logger
 import util._
 import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
-
+import org.clapper.avsl.Logger
 
 trait ImplicitResponses {
   implicit def str2responseFn(str: String) =
@@ -14,7 +13,7 @@ trait ImplicitResponses {
     Html(xml)
 }
 
-trait Scalatra[Req,Res] {
+trait Scalatra[Req,Res] extends ImplicitResponses{
 
   //this is used for all request methods for now
   private lazy val handlers = collection.mutable.Map[String,Function0[ResponseFunction[Res]]]()
@@ -25,14 +24,14 @@ trait Scalatra[Req,Res] {
     val p = () => f
     handlers += (r -> p)
   }
+
   implicit def request = _request value
 
-  protected def executeRoutes(req: HttpRequest[_]):ResponseFunction[Res] =  {
+  private def executeRoutes(req: HttpRequest[_]):ResponseFunction[Res] =  {
     //TODO:proper matching logic should come here, for now it's matching all request methods from right to left
     val handler = handlers.keys.filter(req.uri.startsWith(_))
     handler.lastOption map(handlers(_)()) getOrElse ( NotFound ~> ResponseString("could not find handler"))
   }
-  val logger = Logger(classOf[App])
 
   //capture all requests
   def intent: unfiltered.Cycle.Intent[Req,Res] = {
@@ -46,8 +45,7 @@ trait Scalatra[Req,Res] {
 * would be nice to utilize unfiltered.filter.Plan.Intent and
 * get rid of [HttpServletRequest,HttpServletResponse] but it should be OK for now
 */
-class App extends unfiltered.filter.Plan with Scalatra[HttpServletRequest,HttpServletResponse]
-with ImplicitResponses {
+class App extends unfiltered.filter.Plan with Scalatra[HttpServletRequest,HttpServletResponse] {
 
   get ("/html") {
     <html>
