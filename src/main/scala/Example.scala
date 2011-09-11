@@ -320,10 +320,6 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
   def error(handler: UnfilteredErrorHandler) = errorHandler = handler orElse errorHandler
 }
 
-/**
-* would be nice to utilize unfiltered.filter.Plan.Intent and
-* get rid of [HttpServletRequest,HttpServletResponse] but it should be OK for now
-*/
 class App[Res,Req] extends Scalatra[Res,Req] {
 
   get ("/html") {
