@@ -326,7 +326,7 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
 * would be nice to utilize unfiltered.filter.Plan.Intent and
 * get rid of [HttpServletRequest,HttpServletResponse] but it should be OK for now
 */
-class App extends unfiltered.filter.Plan with Scalatra[HttpServletRequest,HttpServletResponse] {
+class App extends Scalatra[HttpServletRequest,HttpServletResponse] {
 
   get ("/html") {
     <html>
@@ -355,7 +355,7 @@ object Server {
   def main(args: Array[String]) {
     val http = unfiltered.jetty.Http.anylocal // this will not be necessary in 0.4.0
     http.context("/assets") { _.resources(new java.net.URL(getClass().getResource("/www/css"), ".")) }
-      .filter(new App).run({ svr =>
+      .filter(new App with unfiltered.filter.Plan).run({ svr =>
         unfiltered.util.Browser.open(http.url)
       }, { svr =>
         logger.info("shutting down server")
