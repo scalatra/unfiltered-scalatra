@@ -20,18 +20,18 @@ trait Scalatra[Req,Res] extends ImplicitResponses{
 
   private lazy val _request = new DynamicVariable[HttpRequest[_]](null)
 
+  private def executeRoutes(req: HttpRequest[_]):ResponseFunction[Res] =  {
+    //TODO:proper matching logic should come here, for now it's matching all request methods from right to left
+    val handler = handlers.keys.filter(req.uri.startsWith(_))
+    handler.lastOption map(handlers(_)()) getOrElse ( NotFound ~> ResponseString("could not find handler"))
+  }
+
   def get(r:String)( f: => ResponseFunction[Res]) = {
     val p = () => f
     handlers += (r -> p)
   }
 
   implicit def request = _request value
-
-  private def executeRoutes(req: HttpRequest[_]):ResponseFunction[Res] =  {
-    //TODO:proper matching logic should come here, for now it's matching all request methods from right to left
-    val handler = handlers.keys.filter(req.uri.startsWith(_))
-    handler.lastOption map(handlers(_)()) getOrElse ( NotFound ~> ResponseString("could not find handler"))
-  }
 
   //capture all requests
   def intent: unfiltered.Cycle.Intent[Req,Res] = {
