@@ -19,44 +19,6 @@ import java.util.concurrent.ConcurrentHashMap
 import ScalatraKernel.{Action, MultiParams}
 import util.{MapWithIndifferentAccess, MultiMapHeadView, MultiMap}
 
-trait CoreDsl[Res] {
-
-  type UnfilteredErrorHandler = PartialFunction[scala.Throwable, ResponseFunction[Res]]
-  def params: Map[String, String]
-
-  def multiParams: MultiParams
-
-  def redirect(uri: String) = throw new RuntimeException("TODO") // TODO: provide redirect etc methods
-
-  def before(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): Unit
-
-  def after(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): Unit
-
-  def notFound(block: => ResponseFunction[Res]): Unit
-
-  def methodNotAllowed(block: Set[HttpMethod] => ResponseFunction[Res]): Unit
-
-  def error(handler: UnfilteredErrorHandler): Unit
-
-  def get(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def post(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def put(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def delete(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def options(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def patch(routeMatchers: RouteMatcher*)(block: => ResponseFunction[Res]): UnfilteredRoute[Res]
-
-  def halt(status: JInteger = null,
-           body: String = "",
-           headers: Map[String, String] = Map.empty,
-           reason: String = null): Nothing
-
-  def pass()
-}
 
 
 case class UnfilteredRoute[T](
@@ -156,9 +118,49 @@ trait ImplicitResponses {
     Html(xml)
 }
 
-trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
+trait CoreDsl extends unfiltered.Underlying with ImplicitResponses{
 
-  protected lazy val routes = new UnfilteredRouteRegistry[Res]()
+  type UnfilteredErrorHandler = PartialFunction[scala.Throwable, ResponseFunction[UnderlyingResponse]]
+
+  def params: Map[String, String]
+
+  def multiParams: MultiParams
+
+  def redirect(uri: String) = throw new RuntimeException("TODO") // TODO: provide redirect etc methods
+
+  def before(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): Unit
+
+  def after(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): Unit
+
+  def notFound(block: => ResponseFunction[UnderlyingResponse]): Unit
+
+  def methodNotAllowed(block: Set[HttpMethod] => ResponseFunction[UnderlyingResponse]): Unit
+
+  def error(handler: UnfilteredErrorHandler): Unit
+
+  def get(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def post(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def put(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def delete(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def options(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def patch(routeMatchers: RouteMatcher*)(block: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse]
+
+  def halt(status: JInteger = null,
+           body: String = "",
+           headers: Map[String, String] = Map.empty,
+           reason: String = null): Nothing
+
+  def pass()
+}
+
+trait Scalatra extends CoreDsl {
+
+  protected lazy val routes = new UnfilteredRouteRegistry[UnderlyingResponse]()
 
   private lazy val _request = new DynamicVariable[HttpRequest[_]](null)
   private lazy val _multiParams = new DynamicVariable[MultiMap](null)
@@ -192,7 +194,7 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
       body: String)
    extends RuntimeException
 
-  protected def executeRoutes:ResponseFunction[Res] =  {
+  protected def executeRoutes:ResponseFunction[UnderlyingResponse] =  {
     val result = try {
       runFilters(routes.beforeFilters)
       val actionResult = runRoutes(routes(HttpMethod(request.method))).headOption
@@ -210,20 +212,20 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
     result
   }
 
-  protected def runFilters(filters: Traversable[UnfilteredRoute[Res]]) =
+  protected def runFilters(filters: Traversable[UnfilteredRoute[UnderlyingResponse]]) =
     for {
       route <- filters
       matchedRoute <- route()
     } invoke(matchedRoute)
 
-  protected def runRoutes(routes: Traversable[UnfilteredRoute[Res]]) =
+  protected def runRoutes(routes: Traversable[UnfilteredRoute[UnderlyingResponse]]) =
     for {
       route <- routes.toStream // toStream makes it lazy so we stop after match
       matchedRoute <- route()
       actionResult <- invoke(matchedRoute)
     } yield actionResult
 
-  protected def invoke(matchedRoute: MatchedUnfilteredRoute[Res]) =
+  protected def invoke(matchedRoute: MatchedUnfilteredRoute[UnderlyingResponse]) =
     withRouteMultiParams(Some(matchedRoute)) {
       try {
         Some(matchedRoute.action())
@@ -233,7 +235,7 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
       }
     }
 
-  protected def withRouteMultiParams[S](matchedRoute: Option[MatchedUnfilteredRoute[Res]])(thunk: => S): S = {
+  protected def withRouteMultiParams[S](matchedRoute: Option[MatchedUnfilteredRoute[UnderlyingResponse]])(thunk: => S): S = {
     val originalParams = multiParams
     _multiParams.withValue(originalParams ++ matchedRoute.map(_.multiParams).getOrElse(Map.empty))(thunk)
   }
@@ -243,28 +245,28 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
 
   protected class PassException extends RuntimeException
 
-  def get(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Get, routeMatchers, action)
+  def get(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Get, routeMatchers, action)
 
-  def post(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Post, routeMatchers, action)
+  def post(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Post, routeMatchers, action)
 
-  def put(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Put, routeMatchers, action)
+  def put(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Put, routeMatchers, action)
 
-  def delete(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Delete, routeMatchers, action)
+  def delete(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Delete, routeMatchers, action)
 
-  def options(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Options, routeMatchers, action)
+  def options(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Options, routeMatchers, action)
 
-  def patch(routeMatchers: RouteMatcher*)(action: => ResponseFunction[Res]) = addRoute(Patch, routeMatchers, action)
+  def patch(routeMatchers: RouteMatcher*)(action: => ResponseFunction[UnderlyingResponse]) = addRoute(Patch, routeMatchers, action)
 
-  protected def addRoute(method: HttpMethod, routeMatchers: Iterable[RouteMatcher], action: => ResponseFunction[Res]): UnfilteredRoute[Res] = {
+  protected def addRoute(method: HttpMethod, routeMatchers: Iterable[RouteMatcher], action: => ResponseFunction[UnderlyingResponse]): UnfilteredRoute[UnderlyingResponse] = {
     val route = UnfilteredRoute(routeMatchers, () => action, () => request.uri)
     routes.prependRoute(method, route)
     route
   }
 
-  protected def removeRoute(method: HttpMethod, route: UnfilteredRoute[Res]): Unit =
+  protected def removeRoute(method: HttpMethod, route: UnfilteredRoute[UnderlyingResponse]): Unit =
     routes.removeRoute(method, route)
 
-  protected def removeRoute(method: String, route: UnfilteredRoute[Res]): Unit =
+  protected def removeRoute(method: String, route: UnfilteredRoute[UnderlyingResponse]): Unit =
     removeRoute(HttpMethod(method), route)
 
 
@@ -277,7 +279,7 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
   }
 
   //capture all requests
-  def intent: unfiltered.Cycle.Intent[Req,Res] = {
+  def intent: unfiltered.Cycle.Intent[UnderlyingRequest,UnderlyingResponse] = {
     case req @ _  =>  _request.withValue(req) {
       val multiMap = request.parameterNames.foldLeft(MultiMap()){ (acc, name) =>
         acc + (name -> request.parameterValues(name))
@@ -288,30 +290,30 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
     }
   }
 
-  private def matchOtherMethods(): Option[ResponseFunction[Res]] = {
+  private def matchOtherMethods(): Option[ResponseFunction[UnderlyingResponse]] = {
     val allow = routes.matchingMethodsExcept(HttpMethod(request.method))
     if (allow.isEmpty) None else Some(doMethodNotAllowed(allow))
   }
 
-  def before(routeMatchers: RouteMatcher*)(fun: => ResponseFunction[Res]) =
+  def before(routeMatchers: RouteMatcher*)(fun: => ResponseFunction[UnderlyingResponse]) =
     addBefore(routeMatchers, fun)
 
-  private def addBefore(routeMatchers: Iterable[RouteMatcher], fun: => ResponseFunction[Res]) =
+  private def addBefore(routeMatchers: Iterable[RouteMatcher], fun: => ResponseFunction[UnderlyingResponse]) =
     routes.appendBeforeFilter(UnfilteredRoute(routeMatchers, () => fun))
 
-  def after(routeMatchers: RouteMatcher*)(fun: => ResponseFunction[Res]) =
+  def after(routeMatchers: RouteMatcher*)(fun: => ResponseFunction[UnderlyingResponse]) =
     addAfter(routeMatchers, fun)
 
-  private def addAfter(routeMatchers: Iterable[RouteMatcher], fun: => ResponseFunction[Res]) =
+  private def addAfter(routeMatchers: Iterable[RouteMatcher], fun: => ResponseFunction[UnderlyingResponse]) =
     routes.appendAfterFilter(UnfilteredRoute(routeMatchers, () => fun))
 
-  protected var doMethodNotAllowed: (Set[HttpMethod] => ResponseFunction[Res]) = { allow =>
+  protected var doMethodNotAllowed: (Set[HttpMethod] => ResponseFunction[UnderlyingResponse]) = { allow =>
     MethodNotAllowed ~> ResponseString(allow mkString ", ")
   }
-  def methodNotAllowed(f: Set[HttpMethod] => ResponseFunction[Res]) = doMethodNotAllowed = f
+  def methodNotAllowed(f: Set[HttpMethod] => ResponseFunction[UnderlyingResponse]) = doMethodNotAllowed = f
 
-  protected var doNotFound: () => ResponseFunction[Res] = () => NotFound ~> ResponseString("could not find handler")
-  def notFound(block: => ResponseFunction[Res]) {
+  protected var doNotFound: () => ResponseFunction[UnderlyingResponse] = () => NotFound ~> ResponseString("could not find handler")
+  def notFound(block: => ResponseFunction[UnderlyingResponse]) {
     doNotFound = () => block
   }
 
@@ -320,7 +322,7 @@ trait Scalatra[Req,Res] extends CoreDsl[Res] with ImplicitResponses {
   def error(handler: UnfilteredErrorHandler) = errorHandler = handler orElse errorHandler
 }
 
-class App[Res,Req] extends Scalatra[Res,Req] {
+class App extends Scalatra {
 
   get ("/html") {
     <html>
@@ -343,13 +345,14 @@ class App[Res,Req] extends Scalatra[Res,Req] {
 }
 
 
+
 /** embedded server */
 object Server {
   val logger = Logger(Server.getClass)
   def main(args: Array[String]) {
     val http = unfiltered.jetty.Http.anylocal // this will not be necessary in 0.4.0
     http.context("/assets") { _.resources(new java.net.URL(getClass().getResource("/www/css"), ".")) }
-      .filter(new App[HttpServletRequest,HttpServletResponse] with unfiltered.filter.Plan).run({ svr =>
+      .filter(new App with unfiltered.filter.Plan).run({ svr =>
         unfiltered.util.Browser.open(http.url)
       }, { svr =>
         logger.info("shutting down server")
